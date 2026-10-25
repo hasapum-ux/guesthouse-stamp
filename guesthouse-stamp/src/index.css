@@ -1,1 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&family=Pretendard:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+.font-serif-kr {
+  font-family: 'Noto Serif KR', serif;
+}
