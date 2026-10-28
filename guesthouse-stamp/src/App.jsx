@@ -6,10 +6,10 @@ import {
   setDoc,
   getDoc,
   onSnapshot,
-  updateDoc
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import {
-  Feather,
   Clock,
   Search,
   Plus,
@@ -25,11 +25,13 @@ import {
   Sparkles,
   Calendar,
   Award,
-  Globe
+  Globe,
+  ShieldCheck,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 // [커스텀 이미지 설정]
-// public 폴더에 직접 만든 이미지를 넣고 경로(예: "/my-header.png")를 적으면 기본 일러스트 대신 해당 이미지가 표시됩니다.
 const CUSTOM_HEADER_IMAGE = "";
 
 // 2026.11.1 ~ 2027.4.30 기간 내 법정 공휴일 목록 (체크아웃 날짜 기준)
@@ -46,7 +48,7 @@ const DEFAULT_HOLIDAYS = [
 const DAY_NAMES_KO = ['일', '월', '화', '수', '목', '금', '토'];
 const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// 한국어 / 영어 다국어 사전
+// 한국어 / 영어 다국어 사전 (개인정보 동의 문구 포함)
 const I18N = {
   ko: {
     badge: '삼호대숲 철새마을',
@@ -69,10 +71,22 @@ const I18N = {
     namePlaceholder: '성함을 입력해주세요',
     phoneLabel: '휴대폰 번호',
     phonePlaceholder: '010-1234-5678',
+    privacyLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    privacyDetailBtn: '약관 보기',
+    privacyHideBtn: '접기',
+    privacyPurposeTitle: '1. 수집·이용 목적',
+    privacyPurposeDesc: '평일 숙박 스탬프 적립 및 조회, 본인 확인, 10회 달성 시 무료 숙박권 쿠폰 발급 및 사용 관리',
+    privacyItemsTitle: '2. 수집하는 개인정보 항목',
+    privacyItemsDesc: '예약자 성함, 휴대전화번호, 숙박 적립 일시',
+    privacyPeriodTitle: '3. 보유 및 이용기간',
+    privacyPeriodDesc: '이벤트 종료 후 1년 또는 무료 숙박권 사용 완료 시까지 보관 후 지체 없이 파기 (단, 이용자 요청 시 즉시 파기)',
+    privacyRefuseTitle: '4. 동의 거부 권리 및 불이익 안내',
+    privacyRefuseDesc: '개인정보 수집·이용에 대한 동의를 거부할 권리가 있습니다. 단, 동의를 거부하실 경우 스탬프 적립 및 무료 숙박권 발급이 제한됩니다.',
+    privacyError: '스탬프 적립 및 조회를 위해 [필수] 개인정보 수집 및 이용에 동의해주세요.',
     submitStamp: '오늘의 철새 스탬프 찍기',
     submitView: '내 스탬프북 조회하기',
     loading: '확인 중...',
-    inputError: '예약자 성함과 휴대폰 번호를 정확히 입력해주세요.',
+    inputError: '예약자 성함과 휴대폰 번호 11자리를 정확히 입력해주세요.',
     alreadyStamped: (date) => `이번 숙박(${date} 입실) 스탬프는 이미 도장이 찍혔습니다. (1박 1회)`,
     rewardEarned: '축하합니다! 10번의 여정을 모두 채워 [평일 1박 무료 숙박권]이 발급되었습니다.',
     stampSuccess: (date, inDay) => `${date}(${inDay}요일 입실) 삼호대숲 철새 도장이 찍혔습니다!`,
@@ -87,7 +101,7 @@ const I18N = {
     boardSub: '평일 숙박 적립 현황',
     boardTitle: '삼호대숲 열 번의 발자취',
     unitCount: '회',
-     stampedLabel: '적립완료',
+    stampedLabel: '적립완료',
     freeStayGoal: '무료숙박',
     remainText: (remain) => `${remain}번 더 머무르시면 평일 1박 무료 숙박권이 발급됩니다.`,
     historyTitle: '최근 머문 입실일 기록',
@@ -114,6 +128,18 @@ const I18N = {
     namePlaceholder: 'Enter your name',
     phoneLabel: 'Phone Number',
     phonePlaceholder: '010-1234-5678',
+    privacyLabel: '[Required] I agree to the collection and use of personal information.',
+    privacyDetailBtn: 'Details',
+    privacyHideBtn: 'Hide',
+    privacyPurposeTitle: '1. Purpose of Collection & Use',
+    privacyPurposeDesc: 'Managing weekday stay stamps, verifying guest identity, and issuing/managing the 1-Night Free Stay Voucher upon 10 stays.',
+    privacyItemsTitle: '2. Personal Data Collected',
+    privacyItemsDesc: 'Guest name, mobile phone number, and check-in stamp history.',
+    privacyPeriodTitle: '3. Retention & Use Period',
+    privacyPeriodDesc: 'Retained for up to 1 year after the event ends or until the free voucher is redeemed, then permanently deleted (immediately deleted upon user request).',
+    privacyRefuseTitle: '4. Right to Refuse & Disadvantage',
+    privacyRefuseDesc: 'You have the right to refuse consent. However, without consent, you cannot collect stamps or receive the free stay voucher.',
+    privacyError: 'Please check the [Required] Privacy Policy agreement box to continue.',
     submitStamp: 'Collect Today’s Bird Stamp',
     submitView: 'View My Stamp Book',
     loading: 'Checking...',
@@ -147,7 +173,15 @@ const formatDateStr = (dateObj) => {
   return `${y}-${m}-${d}`;
 };
 
-// [정밀 수묵 판화풍 SVG] S자 목과 부리, 다리, 날개깃이 살아있는 백로 & 떼까마귀 군무
+const formatDateTimeStr = (dateObj) => {
+  const datePart = formatDateStr(dateObj);
+  const hh = String(dateObj.getHours()).padStart(2, '0');
+  const mm = String(dateObj.getMinutes()).padStart(2, '0');
+  const ss = String(dateObj.getSeconds()).padStart(2, '0');
+  return `${datePart} ${hh}:${mm}:${ss}`;
+};
+
+// [정밀 수묵 판화풍 SVG] 백로 & 떼까마귀 군무
 const SamhoArtHeader = () => {
   if (CUSTOM_HEADER_IMAGE) {
     return (
@@ -172,21 +206,13 @@ const SamhoArtHeader = () => {
           <stop offset="60%" stopColor="#192C22" />
           <stop offset="100%" stopColor="#243D30" />
         </linearGradient>
-        <radialGradient id="fullMoon" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FFFDF7" />
-          <stop offset="80%" stopColor="#EFECE1" />
-          <stop offset="100%" stopColor="#DCE3DC" stopOpacity="0" />
-        </radialGradient>
       </defs>
 
-      {/* 깊은 대숲 밤하늘 배경 */}
       <rect width="420" height="200" fill="url(#nightSky)" />
 
-      {/* 달무리와 보름달 */}
       <circle cx="322" cy="64" r="48" fill="#F7F5F0" fillOpacity="0.06" />
       <circle cx="322" cy="64" r="33" fill="#FFFDF7" fillOpacity="0.94" />
 
-      {/* 멀리 겹쳐진 태화강 수변 산세 */}
       <path
         d="M0 156 Q85 130 185 148 T420 135 L420 200 L0 200 Z"
         fill="#14241B"
@@ -197,7 +223,7 @@ const SamhoArtHeader = () => {
         fill="#0D1812"
       />
 
-      {/* 좌측 & 우측 삼호대숲 대나무 줄기와 댓잎 디테일 */}
+      {/* 삼호대숲 대나무 */}
       <g stroke="#08100C" strokeWidth="2.8" strokeLinecap="round">
         <path d="M22 200 Q26 110 34 10" />
         <path d="M42 200 Q48 120 62 28" />
@@ -205,7 +231,6 @@ const SamhoArtHeader = () => {
         <path d="M392 200 Q384 120 374 22" />
         <path d="M406 200 Q398 130 392 50" />
       </g>
-      {/* 대나무 마디와 댓잎 */}
       <g fill="#08100C">
         <path d="M31 46 C48 40, 62 42, 74 50 C58 53, 44 51, 31 46 Z" />
         <path d="M30 50 C44 52, 54 58, 62 66 C48 63, 38 57, 30 50 Z" />
@@ -216,27 +241,22 @@ const SamhoArtHeader = () => {
         <path d="M382 92 C365 86, 353 89, 344 96 C358 98, 370 96, 382 92 Z" />
       </g>
 
-      {/* 은은한 비취색 대숲 뒷배경 잎사귀 */}
       <g fill="#2F5943" opacity="0.55">
         <path d="M68 88 C86 80, 100 83, 110 91 C94 94, 80 92, 68 88 Z" />
         <path d="M48 118 C65 112, 78 115, 86 122 C72 124, 58 122, 48 118 Z" />
         <path d="M375 74 C358 68, 344 71, 335 79 C350 81, 364 79, 375 74 Z" />
       </g>
 
-      {/* [떼까마귀 군무] 보름달 주변을 나는 먹색 까마귀 실루엣 (날개짓 각도 변화) */}
+      {/* 떼까마귀 군무 */}
       <g fill="#101613">
-        {/* 달 안쪽을 지나는 까마귀 */}
         <path d="M298 54 C304 46, 312 45, 318 51 C320 49, 323 49, 325 51 C331 45, 339 46, 345 54 C336 51, 328 53, 322 57 L319 60 L317 57 C311 53, 304 51, 298 54 Z" />
-        {/* 달 왼쪽 위 까마귀 */}
         <path d="M258 36 C263 29, 270 28, 275 33 C280 28, 287 29, 292 36 C284 33, 278 35, 275 39 C272 35, 266 33, 258 36 Z" />
-        {/* 달 오른쪽 위 작은 까마귀들 */}
         <path d="M336 33 C340 28, 345 28, 349 32 C353 28, 358 28, 362 33 C356 31, 352 33, 349 36 C346 33, 342 31, 336 33 Z" />
         <path d="M232 52 C236 48, 240 48, 244 51 C248 48, 252 48, 256 52 C251 50, 247 52, 244 54 C241 52, 237 50, 232 52 Z" opacity="0.85" />
       </g>
 
-      {/* [메인 백로(Egret) 일러스트] 긴 목과 뾰족한 부리, 유려한 날개깃과 뒤로 뻗은 두 다리 */}
+      {/* 백로 일러스트 */}
       <g>
-        {/* 백로 본체 및 큰 날개 (순백색) */}
         <path
           d="M118 82
              C132 58, 156 46, 180 56
@@ -254,23 +274,19 @@ const SamhoArtHeader = () => {
              C136 81, 126 82, 118 82 Z"
           fill="#FFFDF9"
         />
-        {/* 백로 아래쪽 날개와 날개깃 결 */}
         <path
           d="M166 64 C152 78, 142 94, 136 108 C152 96, 168 82, 184 68 Z"
           fill="#E5ECE7"
         />
-        {/* 뒤로 길게 뻗은 백로의 다리 */}
         <path
           d="M154 76 L112 91 M150 79 L116 95"
           stroke="#DCE5DF"
           strokeWidth="1.4"
           strokeLinecap="round"
         />
-        {/* 백로 부리 끝 포인트 */}
         <path d="M233 41 L251 42 L234 44 Z" fill="#E8B966" />
       </g>
 
-      {/* 두 번째 작은 백로 (원경) */}
       <g opacity="0.9">
         <path
           d="M78 112 C88 98, 102 92, 115 98 C109 87, 118 77, 131 76 C126 82, 125 90, 128 97 C134 96, 139 92, 144 92 L153 93 L144 95 C138 96, 133 101, 124 103 C114 105, 102 109, 92 115 Z"
@@ -278,7 +294,6 @@ const SamhoArtHeader = () => {
         />
       </g>
 
-      {/* 강물 위 달빛 윤슬 */}
       <g stroke="#FFFDF7" strokeOpacity="0.22" strokeWidth="1.2" strokeLinecap="round">
         <line x1="285" y1="176" x2="345" y2="176" />
         <line x1="298" y1="183" x2="335" y2="183" />
@@ -288,7 +303,6 @@ const SamhoArtHeader = () => {
   );
 };
 
-// 스탬프 칸 안에 들어갈 작은 백로 심볼 SVG
 const MiniHeronIcon = ({ className = "w-5 h-5" }) => (
   <svg viewBox="0 0 32 32" fill="none" className={className}>
     <path
@@ -302,7 +316,6 @@ export default function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const isAdminParam = urlParams.get('admin') === 'true';
 
-  // 언어 상태 ('ko' 기본 한국어 | 'en' 영어)
   const [lang, setLang] = useState('ko');
   const t = I18N[lang];
 
@@ -310,12 +323,14 @@ export default function App() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [adminPin, setAdminPin] = useState('');
   const [adminPinError, setAdminPinError] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState('list'); // 'list' | 'poster'
-  const [posterLang, setPosterLang] = useState('ko'); // 'ko' | 'en' | 'both'
+  const [adminSubTab, setAdminSubTab] = useState('list');
+  const [posterLang, setPosterLang] = useState('ko');
 
-  // 손님용 상태
+  // 손님용 상태 (개인정보 동의 상태 포함)
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [privacyAgreed, setPrivacyAgreed] = useState(false);
+  const [showPrivacyDetails, setShowPrivacyDetails] = useState(false);
   const [myCustomerId, setMyCustomerId] = useState(() => localStorage.getItem('samho_guest_id') || null);
   const [myCustomerData, setMyCustomerData] = useState(null);
   const [message, setMessage] = useState(null);
@@ -328,7 +343,6 @@ export default function App() {
   const [newHDate, setNewHDate] = useState('');
   const [newHName, setNewHName] = useState('');
 
-  // 현재 실제 시간
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -336,14 +350,14 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // [시간 및 요일 판별 로직] 15:00 ~ 익일 11:00 허용 / 11:00~15:00 정비시간 차단
+  // [시간 및 요일 판별 로직]
   const stayValidation = useMemo(() => {
     const currentHours = now.getHours();
     const currentMinutes = now.getMinutes();
     const totalMinutes = currentHours * 60 + currentMinutes;
 
-    const CHECKIN_TIME = 15 * 60; // 15:00
-    const CHECKOUT_TIME = 11 * 60; // 11:00
+    const CHECKIN_TIME = 15 * 60;
+    const CHECKOUT_TIME = 11 * 60;
 
     let checkInDateObj = new Date(now);
     let checkOutDateObj = new Date(now);
@@ -374,7 +388,6 @@ export default function App() {
       };
     }
 
-    // 1. 이벤트 시즌 검사 (11. 1. ~ 4. 30.)
     const checkInMonth = checkInDateObj.getMonth() + 1;
     if (!(checkInMonth >= 11 || checkInMonth <= 4)) {
       return {
@@ -384,7 +397,6 @@ export default function App() {
       };
     }
 
-    // 2. 체크아웃 날 공휴일 검사
     const matchedHoliday = holidays.find((h) => h.date === checkOutDateStr);
     if (matchedHoliday) {
       const hLabel = lang === 'ko' ? matchedHoliday.name : (matchedHoliday.nameEn || matchedHoliday.name);
@@ -395,7 +407,6 @@ export default function App() {
       };
     }
 
-    // 3. 평일 입실 요일 검사 (일~목 입실 허용)
     if (![0, 1, 2, 3, 4].includes(checkInDayIdx)) {
       return {
         canStamp: false,
@@ -415,7 +426,6 @@ export default function App() {
     };
   }, [now, holidays, lang, t]);
 
-  // Firestore 실시간 손님 데이터 구독
   useEffect(() => {
     if (!myCustomerId) return;
     const unsub = onSnapshot(doc(db, 'customers', myCustomerId), (docSnap) => {
@@ -426,7 +436,6 @@ export default function App() {
     return () => unsub();
   }, [myCustomerId]);
 
-  // 관리자 모드: 전체 고객 목록 구독
   useEffect(() => {
     if (!isAdminParam || !isAdminUnlocked) return;
     const unsub = onSnapshot(collection(db, 'customers'), (snapshot) => {
@@ -445,7 +454,7 @@ export default function App() {
     return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
   };
 
-  // 손님 스탬프 적립 및 조회 핸들러
+  // 손님 스탬프 적립 및 조회 핸들러 (동의 검증 및 동의 시각 기록 포함)
   const handleGuestSubmit = async (e) => {
     e.preventDefault();
     const name = guestName.trim();
@@ -456,10 +465,16 @@ export default function App() {
       return;
     }
 
+    if (!privacyAgreed) {
+      setMessage({ type: 'error', text: t.privacyError });
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
 
     const docId = phone.replace(/[^0-9]/g, '');
+    const agreedTimeStr = formatDateTimeStr(new Date());
 
     try {
       const userRef = doc(db, 'customers', docId);
@@ -475,10 +490,16 @@ export default function App() {
             usedCoupons: 0,
             couponCode: null,
             lastStampedDate: null,
-            history: []
+            history: [],
+            privacyAgreed: true,
+            privacyAgreedAt: agreedTimeStr
           };
 
+      // 적립 불가능 시간대면 열람만 진행하되 최초 동의 기록은 보존
       if (!stayValidation.canStamp) {
+        if (!userSnap.exists()) {
+          await setDoc(userRef, userData, { merge: true });
+        }
         setMyCustomerId(docId);
         setMyCustomerData(userData);
         localStorage.setItem('samho_guest_id', docId);
@@ -513,7 +534,9 @@ export default function App() {
         coupons: isReward ? (userData.coupons || 0) + 1 : userData.coupons || 0,
         couponCode: newCouponCode,
         lastStampedDate: stayValidation.checkInDateStr,
-        history: [...(userData.history || []), stayValidation.checkInDateStr]
+        history: [...(userData.history || []), stayValidation.checkInDateStr],
+        privacyAgreed: true,
+        privacyAgreedAt: userData.privacyAgreedAt || agreedTimeStr
       };
 
       await setDoc(userRef, userData, { merge: true });
@@ -564,6 +587,12 @@ export default function App() {
       coupons: currentCoupons - 1,
       usedCoupons: (used || 0) + 1
     });
+  };
+
+  // 관리자: 고객 개인정보 즉시 파기(삭제) 핸들러
+  const deleteCustomerAdmin = async (id, name) => {
+    if (!window.confirm(`${name}님의 개인정보 및 스탬프 내역을 즉시 파기(삭제)하시겠습니까?`)) return;
+    await deleteDoc(doc(db, 'customers', id));
   };
 
   const handleAddHoliday = (e) => {
@@ -622,7 +651,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-serif-kr text-xl font-bold text-stone-900">삼호철새마을 게스트하우스 관리자</h1>
-              <p className="text-xs text-emerald-800 font-semibold">실시간 스탬프북 적립 현황 및 객실 포스터 인쇄</p>
+              <p className="text-xs text-emerald-800 font-semibold">실시간 스탬프북 적립 현황 및 개인정보 동의 이력 관리</p>
             </div>
           </div>
           <div className="flex bg-stone-200 p-1 rounded-2xl text-xs font-bold">
@@ -650,8 +679,8 @@ export default function App() {
             <div className="bg-white rounded-3xl border border-stone-200/90 p-6 shadow-xs space-y-4">
               <div className="flex flex-wrap justify-between items-center gap-2">
                 <div>
-                  <h2 className="font-serif-kr font-bold text-stone-900 text-lg">숙박객 스탬프 적립 명단</h2>
-                  <p className="text-xs text-stone-500">손님이 객실 QR로 적립하면 실시간으로 반영됩니다.</p>
+                  <h2 className="font-serif-kr font-bold text-stone-900 text-lg">숙박객 스탬프 적립 및 개인정보 동의 명단</h2>
+                  <p className="text-xs text-stone-500">모든 등록 고객의 개인정보 수집 동의 시각이 자동 기록되며, 요청 시 즉시 파기할 수 있습니다.</p>
                 </div>
                 <div className="relative">
                   <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
@@ -674,9 +703,12 @@ export default function App() {
                     .map((c) => (
                       <div key={c.id} className="py-4 flex flex-wrap justify-between items-center gap-3">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-stone-900 text-sm">{c.name}</span>
                             <span className="text-stone-500 font-mono">{c.phone}</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md text-[10px] font-semibold border border-emerald-200">
+                              <ShieldCheck className="w-3 h-3" /> 개인정보 동의완료 ({c.privacyAgreedAt || '기록됨'})
+                            </span>
                             {c.coupons > 0 && (
                               <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 font-bold rounded-full border border-amber-300">
                                 무료숙박권 {c.coupons}장 ({c.couponCode})
@@ -687,7 +719,8 @@ export default function App() {
                             최근 적립 입실일: {c.lastStampedDate || '없음'} · 누적 사용 쿠폰: {c.usedCoupons || 0}장
                           </p>
                         </div>
-                        <div className="flex items-center gap-2.5">
+
+                        <div className="flex items-center gap-2">
                           <div className="flex items-center bg-stone-100 rounded-xl p-1 border border-stone-200">
                             <button
                               onClick={() => adjustStampsAdmin(c.id, c.stamps, -1)}
@@ -703,14 +736,23 @@ export default function App() {
                               <Plus className="w-3.5 h-3.5" />
                             </button>
                           </div>
+
                           {c.coupons > 0 && (
                             <button
                               onClick={() => useCouponAdmin(c.id, c.coupons, c.usedCoupons)}
-                              className="px-3.5 py-2 bg-[#141A17] hover:bg-emerald-950 text-white font-bold rounded-xl transition cursor-pointer"
+                              className="px-3 py-2 bg-[#141A17] hover:bg-emerald-950 text-white font-bold rounded-xl transition cursor-pointer"
                             >
                               숙박권 사용 완료
                             </button>
                           )}
+
+                          <button
+                            onClick={() => deleteCustomerAdmin(c.id, c.name)}
+                            className="p-2 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                            title="개인정보 즉시 파기(삭제)"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     ))
@@ -762,9 +804,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* =================================================
-             객실 액자형 A4 아트 포스터 (한국어 / 한영병기 선택 가능)
-             ================================================= */
+          /* 객실 비치용 A4 포스터 */
           <div className="space-y-5 text-center">
             <div className="print:hidden flex flex-wrap justify-center items-center gap-3">
               <div className="flex bg-stone-200 p-1 rounded-xl text-xs font-bold">
@@ -790,9 +830,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* 실제 인쇄될 A4 프레임 */}
             <div className="max-w-[520px] mx-auto bg-[#F7F5F0] text-[#141A17] rounded-3xl overflow-hidden shadow-2xl border-2 border-[#141A17] print:shadow-none print:rounded-none">
-              {/* 상단 갤러리 아트워크 영역 */}
               <div className="relative h-56 bg-[#121A16]">
                 <SamhoArtHeader />
                 <div className="absolute inset-0 flex flex-col justify-between p-7 text-left bg-gradient-to-t from-black/55 via-transparent to-black/20">
@@ -816,7 +854,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 포스터 본문 */}
               <div className="p-8 space-y-6">
                 <div className="space-y-1.5">
                   <span className="inline-block text-xs font-bold text-emerald-900 bg-emerald-100/80 px-3 py-0.5 rounded-full">
@@ -836,7 +873,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 중앙 QR 스캔 박스 */}
                 <div className="relative bg-white p-6 rounded-3xl border border-stone-300 shadow-sm max-w-xs mx-auto">
                   <div className="p-3 bg-[#FBFBF9] rounded-2xl border border-dashed border-stone-300 inline-block">
                     <img
@@ -857,7 +893,6 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* 3단계 이용 방법 (순수 한국어) */}
                 <div className="grid grid-cols-3 gap-2.5 text-center pt-1">
                   <div className="bg-white/90 p-3 rounded-2xl border border-stone-200">
                     <span className="text-[11px] font-extrabold text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-full">
@@ -870,7 +905,7 @@ export default function App() {
                     <span className="text-[11px] font-extrabold text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-full">
                       둘째
                     </span>
-                    <p className="font-bold text-xs mt-1.5 text-stone-900">예약자 정보 입력</p>
+                    <p className="font-bold text-xs mt-1.5 text-stone-900">정보 입력 및 동의</p>
                     <p className="text-[10px] text-stone-500 mt-0.5">성함 · 연락처 입력</p>
                   </div>
                   <div className="bg-white/90 p-3 rounded-2xl border border-stone-200">
@@ -882,7 +917,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 하단 규정 안내 */}
                 <div className="text-left text-[11px] text-stone-600 bg-[#EFECE4] p-4 rounded-2xl space-y-1 border border-stone-300/70">
                   <p className="font-bold text-stone-900 text-xs mb-1">스탬프 적립 규정 안내</p>
                   <p>• <strong>운영 기간:</strong> 매년 11월 1일 ~ 익년 4월 30일 (동절기 철새 도래 기간)</p>
@@ -898,7 +932,7 @@ export default function App() {
   }
 
   // ==========================================================
-  // [모드 B] 손님용 스탬프북 (기본 100% 한국어 + 한/영 토글 스위치)
+  // [모드 B] 손님용 스탬프북 (개인정보 수집 동의 탑재)
   // ==========================================================
   return (
     <div className="min-h-screen bg-[#0E1310] text-[#181C1A] flex flex-col justify-center items-center p-4 py-8 selection:bg-emerald-900 selection:text-white">
@@ -913,7 +947,6 @@ export default function App() {
               <MiniHeronIcon className="w-3.5 h-3.5 text-white" /> {t.badge}
             </span>
 
-            {/* 한/영 전환 버튼 */}
             <button
               type="button"
               onClick={() => {
@@ -929,7 +962,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* 하단 타이틀 오버레이 */}
           <div className="absolute bottom-0 inset-x-0 p-6 pt-10 bg-gradient-to-t from-[#0E1512]/90 via-[#0E1512]/40 to-transparent text-white">
             <div className="flex items-center justify-between text-xs text-emerald-200/95 font-medium">
               <span>{t.guesthouse}</span>
@@ -986,7 +1018,7 @@ export default function App() {
             </div>
           )}
 
-          {/* [화면 분기 1] 로그인 전: 예약자 성함 + 전화번호 입력 */}
+          {/* [화면 분기 1] 로그인 전: 예약자 성함 + 전화번호 + 개인정보 동의 */}
           {!myCustomerData ? (
             <form onSubmit={handleGuestSubmit} className="space-y-4">
               <div className="bg-white p-5 rounded-3xl border border-stone-200/90 shadow-xs space-y-4">
@@ -1030,6 +1062,58 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                {/* 개인정보 수집·이용 동의 체크박스 및 전문 아코디언 */}
+                <div className="pt-2 border-t border-stone-100 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={privacyAgreed}
+                        onChange={(e) => setPrivacyAgreed(e.target.checked)}
+                        className="w-4 h-4 rounded border-stone-300 text-[#141E19] focus:ring-[#141E19] accent-[#141E19] cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-stone-800 leading-snug">
+                        {t.privacyLabel}
+                      </span>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPrivacyDetails((prev) => !prev)}
+                      className="text-[11px] font-semibold text-emerald-800 hover:underline flex items-center gap-0.5 shrink-0 cursor-pointer"
+                    >
+                      {showPrivacyDetails ? t.privacyHideBtn : t.privacyDetailBtn}
+                      {showPrivacyDetails ? (
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 법정 4대 고지사항 상세 박스 */}
+                  {showPrivacyDetails && (
+                    <div className="bg-[#F9F8F5] p-3.5 rounded-2xl border border-stone-200 text-[11px] text-stone-600 space-y-2 leading-relaxed">
+                      <div>
+                        <p className="font-bold text-stone-800">{t.privacyPurposeTitle}</p>
+                        <p>{t.privacyPurposeDesc}</p>
+                      </div>
+                      <div>
+                        <p className="font-bold text-stone-800">{t.privacyItemsTitle}</p>
+                        <p>{t.privacyItemsDesc}</p>
+                      </div>
+                      <div>
+                        <p className="font-bold text-stone-800">{t.privacyPeriodTitle}</p>
+                        <p className="text-emerald-900 font-semibold">{t.privacyPeriodDesc}</p>
+                      </div>
+                      <div>
+                        <p className="font-bold text-stone-800">{t.privacyRefuseTitle}</p>
+                        <p>{t.privacyRefuseDesc}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <button
@@ -1050,9 +1134,8 @@ export default function App() {
               </button>
             </form>
           ) : (
-            /* [화면 분기 2] 로그인 후: 낙관(도장) 스타일 스탬프북 */
+            /* [화면 분기 2] 로그인 후: 스탬프북 */
             <div className="space-y-5">
-              {/* 여행자 프로필 바 */}
               <div className="flex justify-between items-center bg-white px-4 py-3.5 rounded-2xl border border-stone-200/80 shadow-2xs">
                 <div>
                   <span className="text-[11px] font-bold text-emerald-800">
@@ -1066,6 +1149,7 @@ export default function App() {
                   onClick={() => {
                     setMyCustomerId(null);
                     setMyCustomerData(null);
+                    setPrivacyAgreed(false);
                     localStorage.removeItem('samho_guest_id');
                   }}
                   className="text-xs text-stone-600 hover:text-stone-900 flex items-center gap-1 cursor-pointer bg-stone-100 px-3 py-1.5 rounded-xl font-medium"
@@ -1074,7 +1158,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 보유 무료 숙박권 바우처 */}
               {myCustomerData.coupons > 0 && (
                 <div className="relative bg-[#141E19] text-[#F7F5F0] rounded-3xl p-5 shadow-xl overflow-hidden border border-emerald-800/50">
                   <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#F7F5F0]"></div>
@@ -1099,7 +1182,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* 10칸 원형 낙관(도장) 스탬프 보드 */}
               <div className="bg-white p-5 rounded-3xl border border-stone-200/90 shadow-xs space-y-4">
                 <div className="flex justify-between items-end border-b border-stone-100 pb-3">
                   <div>
@@ -1116,7 +1198,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* 5x2 원형 인장 그리드 */}
                 <div className="grid grid-cols-5 gap-3 py-1">
                   {Array.from({ length: 10 }).map((_, idx) => {
                     const currentStamps = myCustomerData.stamps || 0;
@@ -1165,7 +1246,6 @@ export default function App() {
                 </p>
               </div>
 
-              {/* 최근 방문 기록 */}
               {myCustomerData.history && myCustomerData.history.length > 0 && (
                 <div className="bg-white/70 px-4 py-3.5 rounded-2xl border border-stone-200/80 text-xs">
                   <p className="font-bold text-stone-600 mb-2 flex items-center gap-1.5 text-[11px]">
